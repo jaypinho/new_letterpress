@@ -23,6 +23,8 @@ class Board:
 
         viability_verified = False
 
+        grid_size = 5
+
         minimum_vowels = 5
         max_same_letter = 3
         max_same_hard_letter = 2
@@ -30,7 +32,7 @@ class Board:
 
         while viability_verified == False:
 
-            self.cells = [[random.choice(string.ascii_lowercase) for _ in range(5)] for _ in range(5)]
+            self.cells = [[random.choice(string.ascii_lowercase) for _ in range(grid_size)] for _ in range(grid_size)]
             cells_array = sum(self.cells, [])
 
             # Check for minimum vowels
@@ -96,7 +98,7 @@ class Game:
 
 
     def check_for_winner(self):
-        if len(self.player1_letters) + len(self.player2_letters) >= 25:
+        if len(self.player1_letters) + len(self.player2_letters) >= len(self.board):
             if len(self.player1_letters) > len(self.player2_letters):
                 print('YOU WON!')
             else:
