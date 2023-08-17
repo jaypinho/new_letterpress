@@ -13,7 +13,6 @@ class Board:
 
     def __call__(self):
         return sum(self.cells, [])
-        # return self.cells
 
 
     def __str__(self):
@@ -26,6 +25,7 @@ class Board:
 
         minimum_vowels = 5
         max_same_letter = 3
+        max_same_hard_letter = 2
         q_rule = True
 
         while viability_verified == False:
@@ -40,7 +40,7 @@ class Board:
 
             # Check for max of the same letter
             if Counter(cells_array).most_common()[0][1] > max_same_letter:
-                print('Trying again - maximum same letter', cells_array)
+                print(f'Trying again - maximum same letter of {Counter(cells_array).most_common()[0][0]}', cells_array)
                 continue
 
             # Check for a 'u' if there's also a 'q'
@@ -48,11 +48,12 @@ class Board:
                 print('Trying again - Q without a U', cells_array)
                 continue
 
+            # Check for not too many of the same hard letters
             hard_letters = ['j', 'q', 'v', 'x', 'z']
             too_many_hard_letters = False
             for letter in hard_letters:
-                if len([x for x in cells_array if x == letter]) > 2:
-                    print('Trying again - too many of the same hard letter')
+                if len([x for x in cells_array if x == letter]) > max_same_hard_letter:
+                    print(f'Trying again - too many of the same hard letter of {letter}', cells_array)
                     too_many_hard_letters = True
                     break
             if too_many_hard_letters:
@@ -125,7 +126,7 @@ class Game:
                     color = 'on_red'
             else:
                 color = 'on_black'
-            separator = '\n\n' + " ".join([str(x) if x >= 10 else f"0{str(x)}" for x in range(i, i+square_size)]) + '\n' if i % square_size == 0 else '  '
+            separator = '\n\n' + " ".join([str(x) if x >= 10 else f"{str(x)} " for x in range(i, i+square_size)]) + '\n' if i % square_size == 0 else '  '
             formatted_board += separator + colored(letter.upper(), 'white', color, attrs=attrs)
         print(formatted_board)
 
@@ -204,7 +205,7 @@ class Game:
 
         letters_in_play = self.get_letters_in_play(is_player1_move=is_player1_move)
         for letter in played_letters:
-            if letter in letters_in_play: # If it's not a locked opposing letter and it's not a letter this player already has...
+            if letter in letters_in_play['neutral'] or letter in letters_in_play['opposing']:
                 if is_player1_move:
                     self.player1_letters.append(letter)
                     if letter in self.player2_letters:
@@ -218,19 +219,29 @@ class Game:
     # Find all the letters that could be picked up by the current player in this move
     def get_letters_in_play(self, is_player1_move):
 
-        letters_in_play = []
+        letters_in_play = {
+            'neutral': [],
+            'opposing': [],
+            'neither': []
+        }
 
         for i, letter in enumerate(self.board):
+            appended_letter = False
             if i not in self.player1_letters and i not in self.player2_letters:
-                letters_in_play.append(i)
+                letters_in_play['neutral'].append(i)
+                appended_letter = True
             elif is_player1_move and i in self.player2_letters:
                 adjacent_letters = self.find_adjacent_letters(i)
                 if len(set(adjacent_letters) & set(self.player2_letters)) < len(adjacent_letters): # If it's not a locked opposing letter...
-                    letters_in_play.append(i)
+                    letters_in_play['opposing'].append(i)
+                    appended_letter = True
             elif is_player1_move == False and i in self.player1_letters:
                 adjacent_letters = self.find_adjacent_letters(i)
                 if len(set(adjacent_letters) & set(self.player1_letters)) < len(adjacent_letters): # If it's not a locked opposing letter...
-                    letters_in_play.append(i)
+                    letters_in_play['opposing'].append(i)
+                    appended_letter = True
+            if appended_letter == False:
+                letters_in_play['neither'].append(i)
 
         return letters_in_play
 
@@ -261,7 +272,20 @@ class Game:
         print('Player 1 has played', user_word)
 
 
-    def find_best_indices_for_word(self, word, board_letters):
+    def can_win_game_with_word(self, word, grouped_board_letters):
+
+        # print(grouped_board_letters)
+
+        neutral_letters = [self.board[char] for char in grouped_board_letters['neutral']]
+        # Return False if the given word wouldn't use up all the neutral letters (which is a requirement to win the game) 
+        for letter in set(neutral_letters):
+            if neutral_letters.count(letter) > word.count(letter):
+                return False
+            
+        return True
+
+
+    def find_indices_for_word(self, word, board_letters):
 
         word_list = list(word) # The specified word as a list of characters
 
@@ -271,7 +295,7 @@ class Game:
             start_from_index = 0
             cur_index = None
             while matching_character_found == False:
-                cur_index = next((x[0] for x in board_letters[start_from_index:] if x[1] == character), None)
+                cur_index = next((x for x in board_letters[start_from_index:] if self.board[x] == character), None)
                 if cur_index is None: # Should only happen with words that can't be made with the letters on the board
                     return []
                 if cur_index in indices:
@@ -284,39 +308,59 @@ class Game:
         return indices
 
 
+    def score_word(self, word, grouped_board_letters):
+
+        winning_points = 100
+        neutral_letter_points = 1
+        opposing_letter_points = 2
+        newly_locked_letter_points = 0
+        newly_unlocked_opponent_letter_points = 0
+
+        if self.can_win_game_with_word(word, grouped_board_letters):
+            modified_board_letters = grouped_board_letters['neutral'] + grouped_board_letters['opposing'] + grouped_board_letters['neither']
+            return {
+                'score': winning_points,
+                'indices': self.find_indices_for_word(word, modified_board_letters)
+            }
+        
+        modified_board_letters = grouped_board_letters['opposing'] + grouped_board_letters['neutral'] + grouped_board_letters['neither']
+        word_indices = self.find_indices_for_word(word, modified_board_letters)
+        return {
+            'score': (opposing_letter_points * len([x for x in word_indices if x in grouped_board_letters['opposing']])) + (neutral_letter_points * len([x for x in word_indices if x in grouped_board_letters['neutral']])),
+            'indices': word_indices
+        }
+
+
     def get_computer_move(self):
 
         self.print_board()
+        word_candidates = []
+        grouped_board_letters = dict(self.get_letters_in_play(is_player1_move=False))
 
-        word_verified = False
-        word_candidate = None
+        highest_scoring_word = 0
+        for word in sorted(self.vocabulary, key=len, reverse=True):
 
-        letters_in_play = list(self.get_letters_in_play(is_player1_move=False))
+            # Stop looking for word candidates if A) there are no words left that could win the game and B) there are no words left that could possibly score as high or higher than the current highest-scoring word
+            if len(word) < len(grouped_board_letters['neutral']) and len(word) * 2 < highest_scoring_word:
+                break
 
-        # Sort the letters on the board with the ones that are in play listed first
-        board_letters = [[x[0], x[1]] for x in enumerate(self.board)]
-        board_letters = sorted(board_letters, key=lambda x: x[0] in letters_in_play, reverse=True)
-
-        while word_verified == False:
-
-            if self.hard_mode:
-                really_hard_mode = True
-                if really_hard_mode: # We're in really hard mode so iterate through the entire vocabulary list in reverse order of how many letters in play that word could match against
-                    vocab = sorted(self.vocabulary, key=lambda x: len(self.find_best_indices_for_word(x, board_letters)), reverse=True)
-                else: # We're in hard mode so iterate through the entire vocabulary list in reverse order of word length (meaning try to play the longest words first)
-                    vocab = sorted(self.vocabulary, key=len, reverse=True)
-            else: # We're in easy mode so just iterate through the entire vocabulary list in order (which is usually alphabetical) 
-                vocab = self.vocabulary
-
-            for word in vocab:
-                if self.is_available_word(word):
-                    word_candidate = word
-                    word_verified = True
-                    break
+            if self.is_available_word(word):
+                word_score = self.score_word(word, grouped_board_letters)
+                if word_score['score'] == 100:
+                    self.played_words.append(word)
+                    self.assign_letters_to_players(is_player1_move=False, played_letters=word_score['indices'])
+                    print('Computer has played', word)
+                    return None
+                if highest_scoring_word < word_score['score']:
+                    highest_scoring_word = word_score['score']
+                word_candidates.append([word, word_score])
         
-        self.played_words.append(word_candidate)
-        self.assign_letters_to_players(is_player1_move=False, played_letters=self.find_best_indices_for_word(word_candidate, board_letters))
-        print('Computer has played', word_candidate)
+        print(f'Found {len(word_candidates)} word candidates')
+        best_word = sorted(word_candidates, key=lambda x: x[1]['score'], reverse=True)[0]
+
+        self.played_words.append(best_word[0])
+        self.assign_letters_to_players(is_player1_move=False, played_letters=best_word[1]['indices'])
+        print('Computer has played', best_word[0])
 
 
 game = Game()
