@@ -163,31 +163,6 @@ class Game:
 
     def convert_indices_to_word(self, indices):
         return "".join([self.board[x] for x in indices])
-    
-
-    def convert_word_to_indices(self, word, conversion_method='simple'):
-        word_list = list(word)
-        board_letters = [[x[0], x[1]] for x in enumerate(self.board)]
-
-        if conversion_method == 'letters_in_play_first':
-            letters_in_play = list(self.get_letters_in_play(is_player1_move=False))
-            board_letters = sorted(board_letters, key=lambda x: x[0] in letters_in_play, reverse=True)
-            print('Board letters', board_letters)
-
-        indices = []
-        for character in word_list:
-            matching_character_found = False
-            start_from_index = 0
-            cur_index = None
-            while matching_character_found == False:
-                cur_index = next((x[0] for x in board_letters[start_from_index:] if x[1] == character), None)
-                if cur_index in indices:
-                    start_from_index = cur_index + 1
-                    continue
-                matching_character_found = True
-            indices.append(cur_index)
-        print('Indices being played', indices)
-        return indices
 
 
     def find_adjacent_letters(self, letter_index):
@@ -268,8 +243,12 @@ class Game:
 
         while word_verified == False:
 
-            # user_word = input('\nEnter your word: ').lower().strip()
             user_indices = [int(x) for x in input('\nEnter the indices of your word: ').lower().strip().split(" ")]
+
+            if len([x for x in user_indices if x >= len(self.board)]) > 0:
+                print('You used a nonexistent letter')
+                continue
+
             user_word = self.convert_indices_to_word(user_indices)
 
             if self.is_available_word(user_word, verbose=True) == False:
@@ -279,20 +258,30 @@ class Game:
 
         self.played_words.append(user_word)
         self.assign_letters_to_players(is_player1_move=True, played_letters=user_indices)
-        # self.player1_letters = list(set(self.player1_letters + user_indices))
         print('Player 1 has played', user_word)
-    
 
-    def find_best_computer_words(self, word, letters_in_play):
-        word_chars_left = list(word)
-        letters_in_play_left = list(letters_in_play)
 
-        for letter in letters_in_play_left:
-            if letter in word_chars_left:
-                letters_in_play_left.remove(letter)
-                word_chars_left.remove(letter)
-        
-        return len(letters_in_play) - len(letters_in_play_left)
+    def find_best_indices_for_word(self, word, board_letters):
+
+        word_list = list(word) # The specified word as a list of characters
+
+        indices = []
+        for character in word_list:
+            matching_character_found = False
+            start_from_index = 0
+            cur_index = None
+            while matching_character_found == False:
+                cur_index = next((x[0] for x in board_letters[start_from_index:] if x[1] == character), None)
+                if cur_index is None: # Should only happen with words that can't be made with the letters on the board
+                    return []
+                if cur_index in indices:
+                    start_from_index += 1
+                    if start_from_index >= len(board_letters): # Should only happen with words that can't be made with the letters on the board
+                        return []
+                    continue
+                matching_character_found = True
+            indices.append(cur_index)
+        return indices
 
 
     def get_computer_move(self):
@@ -302,13 +291,18 @@ class Game:
         word_verified = False
         word_candidate = None
 
+        letters_in_play = list(self.get_letters_in_play(is_player1_move=False))
+
+        # Sort the letters on the board with the ones that are in play listed first
+        board_letters = [[x[0], x[1]] for x in enumerate(self.board)]
+        board_letters = sorted(board_letters, key=lambda x: x[0] in letters_in_play, reverse=True)
+
         while word_verified == False:
 
             if self.hard_mode:
                 really_hard_mode = True
                 if really_hard_mode: # We're in really hard mode so iterate through the entire vocabulary list in reverse order of how many letters in play that word could match against
-                    letters_in_play = list(self.convert_indices_to_word(self.get_letters_in_play(is_player1_move=False)))
-                    vocab = sorted(self.vocabulary, key=lambda x: self.find_best_computer_words(x, letters_in_play), reverse=True)
+                    vocab = sorted(self.vocabulary, key=lambda x: len(self.find_best_indices_for_word(x, board_letters)), reverse=True)
                 else: # We're in hard mode so iterate through the entire vocabulary list in reverse order of word length (meaning try to play the longest words first)
                     vocab = sorted(self.vocabulary, key=len, reverse=True)
             else: # We're in easy mode so just iterate through the entire vocabulary list in order (which is usually alphabetical) 
@@ -321,7 +315,7 @@ class Game:
                     break
         
         self.played_words.append(word_candidate)
-        self.assign_letters_to_players(is_player1_move=False, played_letters=self.convert_word_to_indices(word_candidate, conversion_method='letters_in_play_first'))
+        self.assign_letters_to_players(is_player1_move=False, played_letters=self.find_best_indices_for_word(word_candidate, board_letters))
         print('Computer has played', word_candidate)
 
 
